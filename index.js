@@ -6,6 +6,11 @@ const app = express();
 const SHOP_URL = process.env.SHOPIFY_SHOP_URL;
 const ACCESS_TOKEN = process.env.SHOPIFY_ACCESS_TOKEN;
 
+// Helper function to format price based on currency
+function formatPrice(amount, currency) {
+    return parseFloat(amount).toFixed(2);
+}
+
 async function fetchOrders() {
     try {
         console.log('Attempting to fetch orders from Shopify...');
@@ -36,8 +41,11 @@ async function fetchOrders() {
 
 async function fetchProductMetafield(productId) {
     try {
-        const url = `https://${SHOP_URL}/admin/api/2024-01/products/${productId}/metafields.json`;
-        const response = await fetch(url, {
+        console.log(`Fetching metafields for product ${productId}...`);
+        const metafieldsUrl = `https://${SHOP_URL}/admin/api/2024-01/products/${productId}/metafields.json`;
+        console.log('Metafields URL:', metafieldsUrl);
+        
+        const response = await fetch(metafieldsUrl, {
             headers: {
                 'X-Shopify-Access-Token': ACCESS_TOKEN,
                 'Content-Type': 'application/json'
@@ -51,7 +59,16 @@ async function fetchProductMetafield(productId) {
         }
 
         const metafields = await response.json();
-        return metafields.metafields.find(m => m.namespace === 'sparklayer' && m.key === 'rrp');
+        console.log(`Received ${metafields.metafields ? metafields.metafields.length : 0} metafields for product ${productId}`);
+        
+        const rrpMetafield = metafields.metafields.find(m => m.namespace === 'sparklayer' && m.key === 'rrp');
+        if (rrpMetafield) {
+            console.log(`Found RRP metafield for product ${productId}:`, rrpMetafield.value);
+        } else {
+            console.log(`No RRP metafield found for product ${productId}`);
+        }
+        
+        return rrpMetafield;
     } catch (error) {
         console.error(`Error fetching metafield for product ${productId}:`, error);
         return null;
@@ -62,31 +79,39 @@ async function processOrder(order) {
     try {
         console.log(`Processing order ${order.order_number}...`);
         const orderCurrency = order.currency;
+        console.log(`Order currency: ${orderCurrency}`);
+        
         const processedOrder = {
-            orderNumber: order.order_number,
+            orderNumber: parseInt(order.order_number),
             orderDate: order.created_at,
             isB2B: order.tags && order.tags.toLowerCase().includes('b2b'),
             currency: orderCurrency,
             items: [],
-            totalDiscount: order.total_discounts,
-            totalPrice: order.total_price
+            totalDiscount: formatPrice(order.total_discounts, orderCurrency),
+            totalPrice: formatPrice(order.total_price, orderCurrency)
         };
 
         for (const item of order.line_items) {
-            console.log(`Processing line item ${item.title}...`);
+            console.log(`Processing line item ${item.title} (Product ID: ${item.product_id})...`);
             const metafield = await fetchProductMetafield(item.product_id);
             let beforePrice = null;
             
             if (metafield) {
                 try {
+                    console.log(`Parsing metafield value for ${item.title}:`, metafield.value);
                     const prices = JSON.parse(metafield.value);
                     const currencyPrice = prices.find(p => p.currency_code.toLowerCase() === orderCurrency.toLowerCase());
                     if (currencyPrice) {
-                        beforePrice = currencyPrice.value;
+                        beforePrice = formatPrice(currencyPrice.value, orderCurrency);
+                        console.log(`Found before price for ${item.title}: ${beforePrice} ${orderCurrency}`);
+                    } else {
+                        console.log(`No price found for currency ${orderCurrency} in metafield`);
                     }
                 } catch (e) {
                     console.error(`Error parsing metafield value for product ${item.product_id}:`, e);
                 }
+            } else {
+                console.log(`No metafield found for product ${item.product_id}`);
             }
 
             processedOrder.items.push({
@@ -94,8 +119,8 @@ async function processOrder(order) {
                 sku: item.sku,
                 quantity: item.quantity,
                 beforePrice: beforePrice,
-                yourPrice: item.price,
-                lineItemDiscount: item.total_discount
+                yourPrice: formatPrice(item.price, orderCurrency),
+                lineItemDiscount: formatPrice(item.total_discount, orderCurrency)
             });
         }
 
