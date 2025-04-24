@@ -14,7 +14,7 @@ function formatPrice(amount, currency) {
 async function fetchOrders() {
     try {
         console.log('Attempting to fetch orders from Shopify...');
-        // Include presentment_money fields in the response
+        // Include variant_id in line_items
         const url = `https://${SHOP_URL}/admin/api/2024-01/orders.json?status=any&fields=id,order_number,created_at,tags,currency,presentment_currency,total_discounts,total_price,line_items,total_shipping_price_set,total_discounts_set,total_price_set`;
         console.log('Request URL:', url);
         
@@ -40,10 +40,10 @@ async function fetchOrders() {
     }
 }
 
-async function fetchProductMetafield(productId) {
+async function fetchVariantMetafield(variantId) {
     try {
-        console.log(`Fetching metafields for product ${productId}...`);
-        const metafieldsUrl = `https://${SHOP_URL}/admin/api/2024-01/products/${productId}/metafields.json`;
+        console.log(`Fetching metafields for variant ${variantId}...`);
+        const metafieldsUrl = `https://${SHOP_URL}/admin/api/2024-01/variants/${variantId}/metafields.json`;
         console.log('Metafields URL:', metafieldsUrl);
         
         const response = await fetch(metafieldsUrl, {
@@ -55,23 +55,23 @@ async function fetchProductMetafield(productId) {
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`Error fetching metafield for product ${productId}:`, errorText);
+            console.error(`Error fetching metafield for variant ${variantId}:`, errorText);
             throw new Error(`Failed to fetch metafield: ${errorText}`);
         }
 
         const metafields = await response.json();
-        console.log(`Received ${metafields.metafields ? metafields.metafields.length : 0} metafields for product ${productId}`);
+        console.log(`Received ${metafields.metafields ? metafields.metafields.length : 0} metafields for variant ${variantId}`);
         
         const rrpMetafield = metafields.metafields.find(m => m.namespace === 'sparklayer' && m.key === 'rrp');
         if (rrpMetafield) {
-            console.log(`Found RRP metafield for product ${productId}:`, rrpMetafield.value);
+            console.log(`Found RRP metafield for variant ${variantId}:`, rrpMetafield.value);
         } else {
-            console.log(`No RRP metafield found for product ${productId}`);
+            console.log(`No RRP metafield found for variant ${variantId}`);
         }
         
         return rrpMetafield;
     } catch (error) {
-        console.error(`Error fetching metafield for product ${productId}:`, error);
+        console.error(`Error fetching metafield for variant ${variantId}:`, error);
         return null;
     }
 }
@@ -79,7 +79,6 @@ async function fetchProductMetafield(productId) {
 async function processOrder(order) {
     try {
         console.log(`Processing order ${order.order_number}...`);
-        // Use presentment_currency instead of shop currency
         const orderCurrency = order.presentment_currency || order.currency;
         console.log(`Order currency: ${orderCurrency}`);
         
@@ -94,8 +93,8 @@ async function processOrder(order) {
         };
 
         for (const item of order.line_items) {
-            console.log(`Processing line item ${item.title} (Product ID: ${item.product_id})...`);
-            const metafield = await fetchProductMetafield(item.product_id);
+            console.log(`Processing line item ${item.title} (Variant ID: ${item.variant_id})...`);
+            const metafield = await fetchVariantMetafield(item.variant_id);
             let beforePrice = null;
             
             if (metafield) {
@@ -110,10 +109,10 @@ async function processOrder(order) {
                         console.log(`No price found for currency ${orderCurrency} in metafield`);
                     }
                 } catch (e) {
-                    console.error(`Error parsing metafield value for product ${item.product_id}:`, e);
+                    console.error(`Error parsing metafield value for variant ${item.variant_id}:`, e);
                 }
             } else {
-                console.log(`No metafield found for product ${item.product_id}`);
+                console.log(`No metafield found for variant ${item.variant_id}`);
             }
 
             processedOrder.items.push({
