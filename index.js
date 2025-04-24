@@ -14,7 +14,8 @@ function formatPrice(amount, currency) {
 async function fetchOrders() {
     try {
         console.log('Attempting to fetch orders from Shopify...');
-        const url = `https://${SHOP_URL}/admin/api/2024-01/orders.json?status=any`;
+        // Include presentment_money fields in the response
+        const url = `https://${SHOP_URL}/admin/api/2024-01/orders.json?status=any&fields=id,order_number,created_at,tags,currency,presentment_currency,total_discounts,total_price,line_items,total_shipping_price_set,total_discounts_set,total_price_set`;
         console.log('Request URL:', url);
         
         const response = await fetch(url, {
@@ -78,7 +79,8 @@ async function fetchProductMetafield(productId) {
 async function processOrder(order) {
     try {
         console.log(`Processing order ${order.order_number}...`);
-        const orderCurrency = order.currency;
+        // Use presentment_currency instead of shop currency
+        const orderCurrency = order.presentment_currency || order.currency;
         console.log(`Order currency: ${orderCurrency}`);
         
         const processedOrder = {
@@ -87,8 +89,8 @@ async function processOrder(order) {
             isB2B: order.tags && order.tags.toLowerCase().includes('b2b'),
             currency: orderCurrency,
             items: [],
-            totalDiscount: formatPrice(order.total_discounts, orderCurrency),
-            totalPrice: formatPrice(order.total_price, orderCurrency)
+            totalDiscount: formatPrice(order.total_discounts_set?.presentment_money?.amount || order.total_discounts, orderCurrency),
+            totalPrice: formatPrice(order.total_price_set?.presentment_money?.amount || order.total_price, orderCurrency)
         };
 
         for (const item of order.line_items) {
@@ -119,8 +121,8 @@ async function processOrder(order) {
                 sku: item.sku,
                 quantity: item.quantity,
                 beforePrice: beforePrice,
-                yourPrice: formatPrice(item.price, orderCurrency),
-                lineItemDiscount: formatPrice(item.total_discount, orderCurrency)
+                yourPrice: formatPrice(item.price_set?.presentment_money?.amount || item.price, orderCurrency),
+                lineItemDiscount: formatPrice(item.total_discount_set?.presentment_money?.amount || item.total_discount, orderCurrency)
             });
         }
 
