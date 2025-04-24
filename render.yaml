@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: ajensen-iex-api
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: SHOPIFY_SHOP_URL
+        sync: false
+      - key: SHOPIFY_ACCESS_TOKEN
+        sync: false
+      - key: SHOPIFY_API_SECRET
+        sync: false 
